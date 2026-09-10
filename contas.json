@@ -1,0 +1,21 @@
+{
+  "lopes": {
+    "senha": "704010",
+    "titular": "Matheus Lopes",
+    "saldo": 50.0,
+    "extrato": [
+      {
+        "data": "10/09/2026 09:18",
+        "tipo": "Saque",
+        "valor": -50.0,
+        "detalhe": ""
+      },
+      {
+        "data": "10/09/2026 09:15",
+        "tipo": "Depósito",
+        "valor": 100.0,
+        "detalhe": ""
+      }
+    ]
+  }
+}
