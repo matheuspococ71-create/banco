@@ -1,3 +1,4 @@
+
 """
 Bagual Banco — Backend
 API que implementa exatamente os endpoints esperados pelo front-end
@@ -10,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from sqlalchemy import (
@@ -175,13 +177,14 @@ def criar_token(usuario_id: str) -> str:
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
+bearer_scheme = HTTPBearer()
+
+
 def usuario_atual(
-    authorization: str = Header(default=None),
+    credenciais: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> Usuario:
-    if not authorization or not authorization.startswith("Bearer "):
-        erro(401, "Não autenticado.")
-    token = authorization.removeprefix("Bearer ").strip()
+    token = credenciais.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         usuario_id = payload.get("sub")
