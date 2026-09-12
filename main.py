@@ -1,122 +1,342 @@
-from typing import List
+"""
+Bagual Banco — Backend
+API que implementa exatamente os endpoints esperados pelo front-end
+(banco-app.html): registro, login, saldo, extrato, depositar, sacar, transferir.
+"""
 
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+import os
+import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
-import auth
-import models
-import schemas
-from database import Base, engine, get_db
+from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, field_validator
+from sqlalchemy import (
+    create_engine, Column, String, Numeric, DateTime, ForeignKey
+)
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
+import bcrypt
+from jose import jwt, JWTError
+
+# ---------------------------------------------------------------------------
+# Configuração
+# ---------------------------------------------------------------------------
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bagual.db")
+# Railway entrega DATABASE_URL como "postgres://...", SQLAlchemy quer "postgresql://"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "troque-essa-chave-em-producao")
+ALGORITHM = "HS256"
+TOKEN_EXPIRE_MINUTES = 60 * 24  # 24h
+
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
+origins = [o.strip() for o in CORS_ORIGINS.split(",")] if CORS_ORIGINS != "*" else ["*"]
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def hash_senha(senha: str) -> str:
+    return bcrypt.hashpw(senha.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verificar_senha(senha: str, senha_hash: str) -> bool:
+    return bcrypt.checkpw(senha.encode("utf-8"), senha_hash.encode("utf-8"))
+
+# ---------------------------------------------------------------------------
+# Modelos de banco de dados
+# ---------------------------------------------------------------------------
+
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    nome = Column(String, nullable=False)
+    usuario = Column(String, unique=True, index=True, nullable=False)
+    senha_hash = Column(String, nullable=False)
+    saldo = Column(Numeric(14, 2), nullable=False, default=0)
+    criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class Movimentacao(Base):
+    __tablename__ = "movimentacoes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    usuario_id = Column(String, ForeignKey("usuarios.id"), nullable=False)
+    tipo = Column(String, nullable=False)
+    descricao = Column(String, nullable=False)
+    valor = Column(Numeric(14, 2), nullable=False)
+    criado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Banco Digital API")
+# ---------------------------------------------------------------------------
+# Schemas (validação de entrada)
+# ---------------------------------------------------------------------------
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+class RegistroIn(BaseModel):
+    nome: str
+    usuario: str
+    senha: str
+
+    @field_validator("nome", "usuario", "senha")
+    @classmethod
+    def nao_vazio(cls, v):
+        if not v or not v.strip():
+            raise ValueError("campo obrigatório")
+        return v.strip()
 
 
-def usuario_atual(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.Usuario:
-    nome_usuario = auth.decodificar_token(token)
-    if nome_usuario is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido ou expirado.")
-    conta = db.query(models.Usuario).filter(models.Usuario.usuario == nome_usuario).first()
-    if conta is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário não encontrado.")
-    return conta
+class LoginIn(BaseModel):
+    usuario: str
+    senha: str
 
+
+class ValorIn(BaseModel):
+    valor: float
+
+    @field_validator("valor")
+    @classmethod
+    def valor_positivo(cls, v):
+        if v is None or v <= 0:
+            raise ValueError("valor deve ser positivo")
+        return v
+
+
+class TransferenciaIn(BaseModel):
+    destinatario: str
+    valor: float
+
+    @field_validator("valor")
+    @classmethod
+    def valor_positivo(cls, v):
+        if v is None or v <= 0:
+            raise ValueError("valor deve ser positivo")
+        return v
+
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
+app = FastAPI(title="Bagual Banco API")
+
+
+# --- MODO DEBUG TEMPORÁRIO ---
+# Isso faz a API devolver o traceback completo no corpo da resposta 500,
+# só para facilitar o diagnóstico. Remover depois que o app estiver estável.
+import traceback
+from fastapi.responses import JSONResponse
+from fastapi.requests import Request
+
+
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": traceback.format_exc()},
+    )
+# --- FIM DO MODO DEBUG ---
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def erro(status_code: int, mensagem: str):
+    raise HTTPException(status_code=status_code, detail=mensagem)
+
+
+# ---------------------------------------------------------------------------
+# Autenticação
+# ---------------------------------------------------------------------------
+
+def criar_token(usuario_id: str) -> str:
+    expira = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": usuario_id, "exp": expira}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def usuario_atual(
+    authorization: str = Header(default=None),
+    db: Session = Depends(get_db),
+) -> Usuario:
+    if not authorization or not authorization.startswith("Bearer "):
+        erro(401, "Não autenticado.")
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        usuario_id = payload.get("sub")
+        if not usuario_id:
+            raise JWTError()
+    except JWTError:
+        erro(401, "Sessão inválida ou expirada.")
+
+    user = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if not user:
+        erro(401, "Sessão inválida ou expirada.")
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Rotas: auth
+# ---------------------------------------------------------------------------
 
 @app.post("/auth/registrar", status_code=201)
-def registrar(dados: schemas.UsuarioCriar, db: Session = Depends(get_db)):
-    if db.query(models.Usuario).filter(models.Usuario.usuario == dados.usuario).first():
-        raise HTTPException(400, "Já existe uma conta com esse usuário.")
-    conta = models.Usuario(
-        usuario=dados.usuario,
-        senha_hash=auth.gerar_hash_senha(dados.senha),
-        nome=dados.nome,
-        saldo=0.0,
+def registrar(dados: RegistroIn, db: Session = Depends(get_db)):
+    existente = (
+        db.query(Usuario)
+        .filter(Usuario.usuario.ilike(dados.usuario))
+        .first()
     )
-    db.add(conta)
+    if existente:
+        erro(409, "Esse usuário já existe.")
+
+    novo = Usuario(
+        nome=dados.nome,
+        usuario=dados.usuario,
+        senha_hash=hash_senha(dados.senha),
+        saldo=Decimal("0"),
+    )
+    db.add(novo)
     db.commit()
-    return {"mensagem": "Conta criada com sucesso."}
+    return {"usuario": novo.usuario}
 
 
-@app.post("/auth/login", response_model=schemas.Token)
-def login(dados: schemas.UsuarioLogin, db: Session = Depends(get_db)):
-    conta = db.query(models.Usuario).filter(models.Usuario.usuario == dados.usuario).first()
-    if not conta or not auth.verificar_senha(dados.senha, conta.senha_hash):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário ou senha inválidos.")
-    token = auth.criar_token(conta.usuario)
-    return schemas.Token(access_token=token)
+@app.post("/auth/login")
+def login(dados: LoginIn, db: Session = Depends(get_db)):
+    user = (
+        db.query(Usuario)
+        .filter(Usuario.usuario.ilike(dados.usuario))
+        .first()
+    )
+    if not user or not verificar_senha(dados.senha, user.senha_hash):
+        erro(401, "Usuário ou senha incorretos.")
+
+    token = criar_token(user.id)
+    return {"access_token": token}
 
 
-@app.get("/conta/saldo", response_model=schemas.SaldoResposta)
-def saldo(conta: models.Usuario = Depends(usuario_atual)):
-    return schemas.SaldoResposta(saldo=conta.saldo)
+# ---------------------------------------------------------------------------
+# Rotas: conta
+# ---------------------------------------------------------------------------
+
+@app.get("/conta/saldo")
+def saldo(user: Usuario = Depends(usuario_atual)):
+    return {"saldo": float(user.saldo)}
 
 
-@app.post("/conta/depositar", response_model=schemas.SaldoResposta)
-def depositar(
-    dados: schemas.ValorOperacao,
-    conta: models.Usuario = Depends(usuario_atual),
-    db: Session = Depends(get_db),
-):
-    conta.saldo += dados.valor
-    db.add(models.Movimentacao(usuario_id=conta.id, tipo="Depósito", valor=dados.valor))
-    db.commit()
-    db.refresh(conta)
-    return schemas.SaldoResposta(saldo=conta.saldo)
-
-
-@app.post("/conta/sacar", response_model=schemas.SaldoResposta)
-def sacar(
-    dados: schemas.ValorOperacao,
-    conta: models.Usuario = Depends(usuario_atual),
-    db: Session = Depends(get_db),
-):
-    if conta.saldo < dados.valor:
-        raise HTTPException(400, "Saldo insuficiente.")
-    conta.saldo -= dados.valor
-    db.add(models.Movimentacao(usuario_id=conta.id, tipo="Saque", valor=-dados.valor))
-    db.commit()
-    db.refresh(conta)
-    return schemas.SaldoResposta(saldo=conta.saldo)
-
-
-@app.post("/conta/transferir", response_model=schemas.SaldoResposta)
-def transferir(
-    dados: schemas.TransferenciaOperacao,
-    conta: models.Usuario = Depends(usuario_atual),
-    db: Session = Depends(get_db),
-):
-    if dados.destino == conta.usuario:
-        raise HTTPException(400, "Não é possível transferir para a própria conta.")
-    destino = db.query(models.Usuario).filter(models.Usuario.usuario == dados.destino).first()
-    if not destino:
-        raise HTTPException(404, "Conta de destino não encontrada.")
-    if conta.saldo < dados.valor:
-        raise HTTPException(400, "Saldo insuficiente.")
-    conta.saldo -= dados.valor
-    destino.saldo += dados.valor
-    db.add(models.Movimentacao(
-        usuario_id=conta.id, tipo="Transferência enviada", valor=-dados.valor, detalhe=f"para {destino.usuario}",
-    ))
-    db.add(models.Movimentacao(
-        usuario_id=destino.id, tipo="Transferência recebida", valor=dados.valor, detalhe=f"de {conta.usuario}",
-    ))
-    db.commit()
-    db.refresh(conta)
-    return schemas.SaldoResposta(saldo=conta.saldo)
-
-
-@app.get("/conta/extrato", response_model=List[schemas.MovimentacaoResposta])
-def extrato(
-    conta: models.Usuario = Depends(usuario_atual),
-    db: Session = Depends(get_db),
-):
-    return (
-        db.query(models.Movimentacao)
-        .filter(models.Movimentacao.usuario_id == conta.id)
-        .order_by(models.Movimentacao.data.desc())
+@app.get("/conta/extrato")
+def extrato(user: Usuario = Depends(usuario_atual), db: Session = Depends(get_db)):
+    itens = (
+        db.query(Movimentacao)
+        .filter(Movimentacao.usuario_id == user.id)
+        .order_by(Movimentacao.criado_em.asc())
         .all()
     )
+    return [
+        {"descricao": m.descricao, "valor": float(m.valor)}
+        for m in itens
+    ]
+
+
+@app.post("/conta/depositar")
+def depositar(
+    dados: ValorIn,
+    user: Usuario = Depends(usuario_atual),
+    db: Session = Depends(get_db),
+):
+    valor = Decimal(str(dados.valor))
+    user.saldo = user.saldo + valor
+    db.add(Movimentacao(
+        usuario_id=user.id,
+        tipo="deposito",
+        descricao="Depósito",
+        valor=valor,
+    ))
+    db.commit()
+    return {"saldo": float(user.saldo)}
+
+
+@app.post("/conta/sacar")
+def sacar(
+    dados: ValorIn,
+    user: Usuario = Depends(usuario_atual),
+    db: Session = Depends(get_db),
+):
+    valor = Decimal(str(dados.valor))
+    if valor > user.saldo:
+        erro(400, "Saldo insuficiente.")
+
+    user.saldo = user.saldo - valor
+    db.add(Movimentacao(
+        usuario_id=user.id,
+        tipo="saque",
+        descricao="Saque",
+        valor=-valor,
+    ))
+    db.commit()
+    return {"saldo": float(user.saldo)}
+
+
+@app.post("/conta/transferir")
+def transferir(
+    dados: TransferenciaIn,
+    user: Usuario = Depends(usuario_atual),
+    db: Session = Depends(get_db),
+):
+    if dados.destinatario.strip().lower() == user.usuario.lower():
+        erro(400, "Não é possível transferir para você mesmo.")
+
+    destino = (
+        db.query(Usuario)
+        .filter(Usuario.usuario.ilike(dados.destinatario.strip()))
+        .first()
+    )
+    if not destino:
+        erro(404, "Usuário de destino não encontrado.")
+
+    valor = Decimal(str(dados.valor))
+    if valor > user.saldo:
+        erro(400, "Saldo insuficiente.")
+
+    user.saldo = user.saldo - valor
+    destino.saldo = destino.saldo + valor
+
+    db.add(Movimentacao(
+        usuario_id=user.id,
+        tipo="transferencia_enviada",
+        descricao=f"Transferência para @{destino.usuario}",
+        valor=-valor,
+    ))
+    db.add(Movimentacao(
+        usuario_id=destino.id,
+        tipo="transferencia_recebida",
+        descricao=f"Transferência de @{user.usuario}",
+        valor=valor,
+    ))
+    db.commit()
+    return {"saldo": float(user.saldo)}
+
+
+@app.get("/")
+def raiz():
+    return {"status": "Bagual Banco API no ar"}
