@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bagual Banco</title>
+<style>
+  :root{
+    --ink:#0F2A2E;
+    --ink-soft:#1C4247;
+    --paper:#F6F3EC;
+    --gold:#C9A24B;
+    --gold-soft:#E4CE94;
+    --error:#B0413E;
+    --ok:#2F6B4F;
+    --line: rgba(15,42,46,0.14);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--ink);
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    color:var(--paper);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+  }
+  #app{
+    width:100%;
+    max-width:430px;
+    min-height:100vh;
+    background:var(--ink);
+    position:relative;
+    display:flex;
+    flex-direction:column;
+  }
+  .brand{
+    padding:38px 28px 20px;
+  }
+  .brand .mark{
+    font-size:13px;
+    letter-spacing:0.14em;
+    color:var(--gold-soft);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin-bottom:6px;
+  }
+  .brand h1{
+    font-size:34px;
+    margin:0;
+    font-weight:400;
+    line-height:1.15;
+    color:var(--paper);
+  }
+  .brand h1 em{
+    font-style:italic;
+    color:var(--gold);
+  }
+  .screen{
+    flex:1;
+    background:var(--paper);
+    border-radius:28px 28px 0 0;
+    padding:32px 26px 40px;
+    color:var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    display:none;
+  }
+  .screen.active{display:block;}
+  h2.title{
+    font-family:'Georgia', serif;
+    font-size:24px;
+    font-weight:400;
+    margin:0 0 6px;
+    color:var(--ink);
+  }
+  .subtitle{
+    font-size:14px;
+    color:var(--ink-soft);
+    margin:0 0 26px;
+    line-height:1.5;
+  }
+  label{
+    display:block;
+    font-size:12px;
+    color:var(--ink-soft);
+    margin:0 0 6px;
+  }
+  input{
+    width:100%;
+    padding:13px 14px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    font-size:15px;
+    color:var(--ink);
+    margin-bottom:16px;
+    font-family:inherit;
+  }
+  input:focus{
+    outline:none;
+    border-color:var(--gold);
+  }
+  button.primary{
+    width:100%;
+    padding:15px;
+    background:var(--ink);
+    color:var(--paper);
+    border:none;
+    border-radius:10px;
+    font-size:15px;
+    cursor:pointer;
+    margin-top:6px;
+    font-family:inherit;
+    transition:opacity .15s;
+  }
+  button.primary:active{opacity:0.75;}
+  button.primary:disabled{opacity:0.5;}
+  .switch{
+    text-align:center;
+    margin-top:20px;
+    font-size:14px;
+    color:var(--ink-soft);
+  }
+  .switch a{color:var(--gold);text-decoration:none; cursor:pointer; border-bottom:1px solid var(--gold);}
+  .msg{
+    font-size:13px;
+    padding:11px 13px;
+    border-radius:8px;
+    margin-bottom:16px;
+    display:none;
+  }
+  .msg.error{ background:#F7E4E3; color:var(--error); display:block;}
+  .msg.ok{ background:#E4EFE8; color:var(--ok); display:block;}
+
+  /* dashboard */
+  .balance-card{
+    background:var(--ink);
+    color:var(--paper);
+    border-radius:16px;
+    padding:26px 22px;
+    margin-bottom:22px;
+  }
+  .balance-card .label{
+    font-size:12px;
+    color:var(--gold-soft);
+    margin-bottom:8px;
+  }
+  .balance-card .amount{
+    font-family:'Georgia', serif;
+    font-size:36px;
+  }
+  .balance-card .who{
+    font-size:12px;
+    color:rgba(246,243,236,0.55);
+    margin-top:10px;
+  }
+  .actions{
+    display:grid;
+    grid-template-columns: repeat(3,1fr);
+    gap:10px;
+    margin-bottom:26px;
+  }
+  .actions button{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 6px;
+    font-size:12.5px;
+    color:var(--ink);
+    cursor:pointer;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .actions button:active{ background:var(--gold-soft); }
+  .section-label{
+    font-size:12px;
+    letter-spacing:0.04em;
+    color:var(--ink-soft);
+    margin:24px 0 10px;
+  }
+  .extrato-item{
+    display:flex;
+    justify-content:space-between;
+    padding:12px 0;
+    border-bottom:1px solid var(--line);
+    font-size:14px;
+  }
+  .extrato-item .desc{color:var(--ink);}
+  .extrato-item .val{font-family:'Georgia',serif;}
+  .empty{
+    font-size:13px;
+    color:var(--ink-soft);
+    text-align:center;
+    padding:24px 0;
+  }
+  .backbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:22px;
+  }
+  .backbar button{
+    background:none;
+    border:none;
+    color:var(--ink-soft);
+    font-size:14px;
+    cursor:pointer;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding:0;
+  }
+  .logout{
+    text-align:center;
+    margin-top:30px;
+    font-size:13px;
+    color:var(--ink-soft);
+    cursor:pointer;
+    text-decoration:underline;
+  }
+  .loading-dot{
+    display:inline-block;
+    width:6px;height:6px;
+    border-radius:50%;
+    background:var(--gold-soft);
+    margin-right:6px;
+    animation:pulse 1s infinite ease-in-out;
+  }
+  @keyframes pulse{ 0%,100%{opacity:0.3;} 50%{opacity:1;} }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="brand">
+    <div class="mark">BAGUAL · CONTA DIGITAL</div>
+    <h1>Seu dinheiro,<br><em>do seu jeito.</em></h1>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="screen active" id="screen-login">
+    <h2 class="title">Entrar</h2>
+    <p class="subtitle">Acessa sua conta com o usuário que você cadastrou.</p>
+    <div class="msg" id="login-msg"></div>
+    <label>Usuário</label>
+    <input type="text" id="login-usuario" autocomplete="username">
+    <label>Senha</label>
+    <input type="password" id="login-senha" autocomplete="current-password">
+    <button class="primary" id="login-btn" onclick="fazerLogin()">Entrar</button>
+    <div class="switch">Ainda não tem conta? <a onclick="irPara('registro')">Criar conta</a></div>
+  </div>
+
+  <!-- REGISTRO -->
+  <div class="screen" id="screen-registro">
+    <h2 class="title">Criar conta</h2>
+    <p class="subtitle">Leva menos de um minuto.</p>
+    <div class="msg" id="registro-msg"></div>
+    <label>Nome completo</label>
+    <input type="text" id="reg-nome">
+    <label>Usuário</label>
+    <input type="text" id="reg-usuario">
+    <label>Senha</label>
+    <input type="password" id="reg-senha">
+    <button class="primary" id="reg-btn" onclick="fazerRegistro()">Criar conta</button>
+    <div class="switch">Já tem conta? <a onclick="irPara('login')">Entrar</a></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="screen" id="screen-dashboard">
+    <div class="balance-card">
+      <div class="label">Saldo disponível</div>
+      <div class="amount" id="saldo-valor">R$ —</div>
+      <div class="who" id="saldo-usuario"></div>
+    </div>
+
+    <div class="actions">
+      <button onclick="irPara('depositar')">Depositar</button>
+      <button onclick="irPara('sacar')">Sacar</button>
+      <button onclick="irPara('transferir')">Transferir</button>
+    </div>
+
+    <div class="section-label">EXTRATO RECENTE</div>
+    <div id="extrato-lista"><div class="empty">Carregando...</div></div>
+
+    <div class="logout" onclick="logout()">Sair da conta</div>
+  </div>
+
+  <!-- DEPOSITAR -->
+  <div class="screen" id="screen-depositar">
+    <div class="backbar"><button onclick="irPara('dashboard')">← Voltar</button></div>
+    <h2 class="title">Depositar</h2>
+    <p class="subtitle">Adiciona saldo à sua conta.</p>
+    <div class="msg" id="depositar-msg"></div>
+    <label>Valor (R$)</label>
+    <input type="number" step="0.01" id="depositar-valor" placeholder="0,00">
+    <button class="primary" onclick="fazerDeposito()">Confirmar depósito</button>
+  </div>
+
+  <!-- SACAR -->
+  <div class="screen" id="screen-sacar">
+    <div class="backbar"><button onclick="irPara('dashboard')">← Voltar</button></div>
+    <h2 class="title">Sacar</h2>
+    <p class="subtitle">Retira um valor da sua conta.</p>
+    <div class="msg" id="sacar-msg"></div>
+    <label>Valor (R$)</label>
+    <input type="number" step="0.01" id="sacar-valor" placeholder="0,00">
+    <button class="primary" onclick="fazerSaque()">Confirmar saque</button>
+  </div>
+
+  <!-- TRANSFERIR -->
+  <div class="screen" id="screen-transferir">
+    <div class="backbar"><button onclick="irPara('dashboard')">← Voltar</button></div>
+    <h2 class="title">Transferir</h2>
+    <p class="subtitle">Envia saldo para outro usuário do Bagual.</p>
+    <div class="msg" id="transferir-msg"></div>
+    <label>Usuário de destino</label>
+    <input type="text" id="transferir-destino">
+    <label>Valor (R$)</label>
+    <input type="number" step="0.01" id="transferir-valor" placeholder="0,00">
+    <button class="primary" onclick="fazerTransferencia()">Confirmar transferência</button>
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://banco-g5ml.onrender.com";
+let token = null;
+let usuarioLogado = null;
+
+function irPara(nome){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + nome).classList.add('active');
+  if(nome === 'dashboard'){ carregarSaldo(); carregarExtrato(); }
+}
+
+function mostrarMsg(id, texto, tipo){
+  const el = document.getElementById(id);
+  el.textContent = texto;
+  el.className = 'msg ' + tipo;
+}
+
+function limparMsg(id){
+  const el = document.getElementById(id);
+  el.className = 'msg';
+  el.textContent = '';
+}
+
+function authHeaders(){
+  const h = { 'Content-Type': 'application/json' };
+  if(token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+}
+
+async function chamarApi(path, method, body){
+  try{
+    const res = await fetch(API_BASE + path, {
+      method,
+      headers: authHeaders(),
+      body: body ? JSON.stringify(body) : undefined
+    });
+    let data = null;
+    try { data = await res.json(); } catch(e) {}
+    return { ok: res.status >= 200 && res.status < 300, status: res.status, data };
+  }catch(err){
+    return { ok:false, status:0, data:{ detail: 'Não consegui falar com o servidor. Confere sua internet.' } };
+  }
+}
+
+async function fazerRegistro(){
+  limparMsg('registro-msg');
+  const nome = document.getElementById('reg-nome').value.trim();
+  const usuario = document.getElementById('reg-usuario').value.trim();
+  const senha = document.getElementById('reg-senha').value;
+  if(!nome || !usuario || !senha){
+    mostrarMsg('registro-msg', 'Preenche todos os campos.', 'error');
+    return;
+  }
+  const btn = document.getElementById('reg-btn');
+  btn.disabled = true; btn.textContent = 'Criando...';
+  const resp = await chamarApi('/auth/registrar', 'POST', { usuario, senha, nome });
+  btn.disabled = false; btn.textContent = 'Criar conta';
+  if(resp.ok){
+    mostrarMsg('registro-msg', 'Conta criada! Agora entra com ela.', 'ok');
+    setTimeout(() => {
+      document.getElementById('login-usuario').value = usuario;
+      irPara('login');
+    }, 900);
+  } else {
+    mostrarMsg('registro-msg', (resp.data && resp.data.detail) || 'Não consegui criar a conta.', 'error');
+  }
+}
+
+async function fazerLogin(){
+  limparMsg('login-msg');
+  const usuario = document.getElementById('login-usuario').value.trim();
+  const senha = document.getElementById('login-senha').value;
+  if(!usuario || !senha){
+    mostrarMsg('login-msg', 'Preenche usuário e senha.', 'error');
+    return;
+  }
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+  const resp = await chamarApi('/auth/login', 'POST', { usuario, senha });
+  btn.disabled = false; btn.textContent = 'Entrar';
+  if(resp.ok){
+    token = (resp.data && (resp.data.access_token || resp.data.token)) || null;
+    usuarioLogado = usuario;
+    document.getElementById('saldo-usuario').textContent = usuario;
+    irPara('dashboard');
+  } else {
+    mostrarMsg('login-msg', (resp.data && resp.data.detail) || 'Usuário ou senha incorretos.', 'error');
+  }
+}
+
+async function carregarSaldo(){
+  const el = document.getElementById('saldo-valor');
+  el.innerHTML = '<span class="loading-dot"></span>carregando';
+  const resp = await chamarApi('/conta/saldo', 'GET');
+  if(resp.ok && resp.data){
+    const saldo = resp.data.saldo ?? resp.data.valor ?? resp.data.balance;
+    el.textContent = 'R$ ' + Number(saldo || 0).toFixed(2).replace('.', ',');
+  } else {
+    el.textContent = 'R$ —';
+  }
+}
+
+async function carregarExtrato(){
+  const lista = document.getElementById('extrato-lista');
+  lista.innerHTML = '<div class="empty">Carregando...</div>';
+  const resp = await chamarApi('/conta/extrato', 'GET');
+  if(resp.ok && Array.isArray(resp.data) && resp.data.length){
+    lista.innerHTML = '';
+    resp.data.slice().reverse().forEach(item => {
+      const desc = item.descricao || item.tipo || 'Movimentação';
+      const valor = item.valor ?? 0;
+      const div = document.createElement('div');
+      div.className = 'extrato-item';
+      div.innerHTML = `<span class="desc">${desc}</span><span class="val">${valor < 0 ? '-' : '+'} R$ ${Math.abs(valor).toFixed(2).replace('.', ',')}</span>`;
+      lista.appendChild(div);
+    });
+  } else {
+    lista.innerHTML = '<div class="empty">Nenhuma movimentação ainda.</div>';
+  }
+}
+
+async function fazerDeposito(){
+  limparMsg('depositar-msg');
+  const valor = parseFloat(document.getElementById('depositar-valor').value);
+  if(!valor || valor <= 0){ mostrarMsg('depositar-msg', 'Digita um valor válido.', 'error'); return; }
+  const resp = await chamarApi('/conta/depositar', 'POST', { valor });
+  if(resp.ok){
+    mostrarMsg('depositar-msg', 'Depósito feito!', 'ok');
+    setTimeout(() => irPara('dashboard'), 700);
+  } else {
+    mostrarMsg('depositar-msg', (resp.data && resp.data.detail) || 'Não consegui depositar.', 'error');
+  }
+}
+
+async function fazerSaque(){
+  limparMsg('sacar-msg');
+  const valor = parseFloat(document.getElementById('sacar-valor').value);
+  if(!valor || valor <= 0){ mostrarMsg('sacar-msg', 'Digita um valor válido.', 'error'); return; }
+  const resp = await chamarApi('/conta/sacar', 'POST', { valor });
+  if(resp.ok){
+    mostrarMsg('sacar-msg', 'Saque feito!', 'ok');
+    setTimeout(() => irPara('dashboard'), 700);
+  } else {
+    mostrarMsg('sacar-msg', (resp.data && resp.data.detail) || 'Não consegui sacar.', 'error');
+  }
+}
+
+async function fazerTransferencia(){
+  limparMsg('transferir-msg');
+  const destino = document.getElementById('transferir-destino').value.trim();
+  const valor = parseFloat(document.getElementById('transferir-valor').value);
+  if(!destino || !valor || valor <= 0){ mostrarMsg('transferir-msg', 'Preenche destino e valor.', 'error'); return; }
+  const resp = await chamarApi('/conta/transferir', 'POST', { destinatario: destino, valor });
+  if(resp.ok){
+    mostrarMsg('transferir-msg', 'Transferência feita!', 'ok');
+    setTimeout(() => irPara('dashboard'), 700);
+  } else {
+    mostrarMsg('transferir-msg', (resp.data && resp.data.detail) || 'Não consegui transferir.', 'error');
+  }
+}
+
+function logout(){
+  token = null;
+  usuarioLogado = null;
+  document.getElementById('login-usuario').value = '';
+  document.getElementById('login-senha').value = '';
+  irPara('login');
+}
+</script>
+</body>
+</html>
